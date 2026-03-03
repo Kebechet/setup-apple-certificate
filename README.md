@@ -27,7 +27,7 @@ Store the base64 output as the `DISTRIBUTION_PRIVATE_KEY_BASE64` secret.
 ## Usage
 
 ```yaml
-- uses: kebechet/setup-apple-certificate@v1
+- uses: kebechet/setup-apple-certificate@v1.0.0
   id: cert
   with:
     app-store-connect-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
