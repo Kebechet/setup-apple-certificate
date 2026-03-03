@@ -72,21 +72,34 @@ PYEOF
 
 # ─── API Helpers ─────────────────────────────────────────────────────────────
 
-api_get() {
+api_call() {
+    local method="$1"
+    shift
     local url="$1"
-    curl -gsf -H "Authorization: Bearer $JWT_TOKEN" -H "Content-Type: application/json" "$url"
+    shift
+    local tmp_body="$WORK_DIR/api_response_body.tmp"
+    local http_code
+    http_code=$(curl -gs -o "$tmp_body" -w '%{http_code}' \
+        -X "$method" \
+        -H "Authorization: Bearer $JWT_TOKEN" \
+        -H "Content-Type: application/json" \
+        "$@" \
+        "$url")
+
+    if [ "$http_code" -ge 400 ]; then
+        echo "ERROR: API $method $url failed with HTTP $http_code" >&2
+        cat "$tmp_body" >&2
+        rm -f "$tmp_body"
+        return 1
+    fi
+
+    cat "$tmp_body"
+    rm -f "$tmp_body"
 }
 
-api_post() {
-    local url="$1"
-    local data="$2"
-    curl -gsf -X POST -H "Authorization: Bearer $JWT_TOKEN" -H "Content-Type: application/json" -d "$data" "$url"
-}
-
-api_delete() {
-    local url="$1"
-    curl -gsf -X DELETE -H "Authorization: Bearer $JWT_TOKEN" "$url"
-}
+api_get() { api_call GET "$1"; }
+api_post() { api_call POST "$1" -d "$2"; }
+api_delete() { api_call DELETE "$1"; }
 
 # ─── Certificate Management ─────────────────────────────────────────────────
 
@@ -486,7 +499,7 @@ openssl pkcs12 -export \
     -out "$P12_PATH" \
     -passout "pass:$P12_PASSWORD" 2>/dev/null
 
-P12_BASE64=$(base64 -w 0 "$P12_PATH" 2>/dev/null || base64 -i "$P12_PATH")
+P12_BASE64=$(base64 -w 0 "$P12_PATH" 2>/dev/null || base64 "$P12_PATH" | tr -d '\n')
 
 # ── Write outputs ───────────────────────────────────────────────────────────
 
