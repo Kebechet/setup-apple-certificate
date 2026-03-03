@@ -154,9 +154,9 @@ lookup_bundle_id() {
 # ─── Main Logic ──────────────────────────────────────────────────────────────
 
 echo "==> Installing PyJWT with cryptography support..."
-pip3 install --quiet PyJWT[crypto] 2>/dev/null \
-    || pip3 install --quiet --break-system-packages PyJWT[crypto] 2>/dev/null \
-    || pip3 install --quiet --break-system-packages PyJWT cryptography
+pip3 install --quiet "PyJWT[crypto]==2.11.0" 2>/dev/null \
+    || pip3 install --quiet --break-system-packages "PyJWT[crypto]==2.11.0" 2>/dev/null \
+    || pip3 install --quiet --break-system-packages "PyJWT==2.11.0" "cryptography>=43.0.0,<45.0.0"
 
 echo "==> Generating JWT for App Store Connect API..."
 JWT_TOKEN=$(generate_jwt)
@@ -490,6 +490,8 @@ openssl x509 -inform DER -in "$CERT_PATH" -out "$PEM_CERT_PATH" 2>/dev/null
 
 P12_PASSWORD=$(openssl rand -base64 32)
 KEYCHAIN_PWD=$(openssl rand -base64 32)
+echo "::add-mask::$P12_PASSWORD"
+echo "::add-mask::$KEYCHAIN_PWD"
 P12_PATH="$WORK_DIR/certificate.p12"
 
 echo "==> Packaging P12..."
