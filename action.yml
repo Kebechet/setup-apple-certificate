@@ -1,8 +1,9 @@
 name: Setup Apple Certificate
-description: >
-  Manages Apple Distribution certificates and provisioning profiles via the
-  App Store Connect API. Uses a persistent private key and reuses existing
-  valid certificates, only creating new ones when necessary.
+description: Sets up Apple Distribution certificates and provisioning profiles via App Store Connect API.
+
+branding:
+  icon: lock
+  color: blue
 
 inputs:
   app-store-connect-key-id:
