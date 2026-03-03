@@ -141,7 +141,9 @@ lookup_bundle_id() {
 # ─── Main Logic ──────────────────────────────────────────────────────────────
 
 echo "==> Installing PyJWT with cryptography support..."
-pip3 install --quiet PyJWT[crypto] 2>/dev/null || pip3 install --quiet PyJWT cryptography
+pip3 install --quiet PyJWT[crypto] 2>/dev/null \
+    || pip3 install --quiet --break-system-packages PyJWT[crypto] 2>/dev/null \
+    || pip3 install --quiet --break-system-packages PyJWT cryptography
 
 echo "==> Generating JWT for App Store Connect API..."
 JWT_TOKEN=$(generate_jwt)
