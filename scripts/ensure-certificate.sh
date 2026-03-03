@@ -34,7 +34,7 @@ export CERT_RENEWAL_BUFFER_DAYS
 
 generate_jwt() {
     local api_key_path="$WORK_DIR/api_key.p8"
-    echo "$APP_STORE_CONNECT_API_KEY_CONTENT_BASE64" | base64 --decode > "$api_key_path"
+    echo "$APP_STORE_CONNECT_API_KEY_CONTENT_BASE64" | base64 -d > "$api_key_path"
 
     API_KEY_PATH="$api_key_path" python3 << 'PYEOF'
 import jwt, time, os
@@ -152,7 +152,7 @@ echo "JWT generated successfully."
 # ── Decode persistent private key ────────────────────────────────────────────
 
 PRIVATE_KEY_PATH="$WORK_DIR/private_key.pem"
-echo "$DISTRIBUTION_PRIVATE_KEY_BASE64" | base64 --decode > "$PRIVATE_KEY_PATH"
+echo "$DISTRIBUTION_PRIVATE_KEY_BASE64" | base64 -d > "$PRIVATE_KEY_PATH"
 echo "==> Persistent private key decoded."
 
 # ── Find existing valid certificate matching our key ─────────────────────────
@@ -486,7 +486,7 @@ openssl pkcs12 -export \
     -out "$P12_PATH" \
     -passout "pass:$P12_PASSWORD" 2>/dev/null
 
-P12_BASE64=$(base64 -w 0 "$P12_PATH")
+P12_BASE64=$(base64 -w 0 "$P12_PATH" 2>/dev/null || base64 -i "$P12_PATH")
 
 # ── Write outputs ───────────────────────────────────────────────────────────
 
