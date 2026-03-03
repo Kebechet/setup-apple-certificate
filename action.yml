@@ -1,0 +1,57 @@
+name: Setup Apple Certificate
+description: >
+  Manages Apple Distribution certificates and provisioning profiles via the
+  App Store Connect API. Uses a persistent private key and reuses existing
+  valid certificates, only creating new ones when necessary.
+
+inputs:
+  app-store-connect-key-id:
+    description: App Store Connect API Key ID
+    required: true
+  app-store-connect-issuer-id:
+    description: App Store Connect API Issuer ID
+    required: true
+  app-store-connect-private-key:
+    description: App Store Connect API key (.p8) content, base64-encoded
+    required: true
+  distribution-private-key:
+    description: Persistent RSA private key, base64-encoded
+    required: true
+  bundle-identifier:
+    description: App bundle identifier (e.g. com.satisfit.app)
+    required: true
+  cert-renewal-buffer-days:
+    description: Days before certificate expiry to trigger renewal
+    required: false
+    default: "30"
+
+outputs:
+  p12-certificate-base64:
+    description: P12 certificate, base64-encoded
+    value: ${{ steps.cert.outputs.P12_DISTRIBUTION_CERTIFICATE_BASE64 }}
+  p12-password:
+    description: Random password for the P12
+    value: ${{ steps.cert.outputs.P12_DISTRIBUTION_PASSWORD }}
+  keychain-password:
+    description: Random keychain password
+    value: ${{ steps.cert.outputs.KEYCHAIN_PASSWORD }}
+  provisioning-profile-name:
+    description: Name of the provisioning profile
+    value: ${{ steps.cert.outputs.PROVISIONING_PROFILE_NAME }}
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure Apple Distribution certificate
+      id: cert
+      shell: bash
+      env:
+        APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-key-id }}
+        APP_STORE_CONNECT_API_ISSUER_ID: ${{ inputs.app-store-connect-issuer-id }}
+        APP_STORE_CONNECT_API_KEY_CONTENT_BASE64: ${{ inputs.app-store-connect-private-key }}
+        DISTRIBUTION_PRIVATE_KEY_BASE64: ${{ inputs.distribution-private-key }}
+        BUNDLE_IDENTIFIER: ${{ inputs.bundle-identifier }}
+        CERT_RENEWAL_BUFFER_DAYS: ${{ inputs.cert-renewal-buffer-days }}
+      run: |
+        chmod +x "${{ github.action_path }}/scripts/ensure-certificate.sh"
+        "${{ github.action_path }}/scripts/ensure-certificate.sh"
