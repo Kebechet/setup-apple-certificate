@@ -13,7 +13,7 @@ Add the following secrets to your repository (Settings > Secrets and variables >
 | `APP_STORE_CONNECT_KEY_ID` | API Key ID from App Store Connect (Keys section) |
 | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID from App Store Connect (Keys section) |
 | `APP_STORE_CONNECT_PRIVATE_KEY_BASE64` | The `.p8` API key file content, base64-encoded |
-| `DISTRIBUTION_PRIVATE_KEY_BASE64` | A persistent RSA private key used for certificate signing, base64-encoded |
+| `DISTRIBUTION_PRIVATE_KEY_BASE64` | *(Optional)* A persistent RSA private key used for certificate signing, base64-encoded. Omit to generate a new key (and certificate) on every run. |
 
 To generate the distribution private key:
 
@@ -58,7 +58,7 @@ This action is designed to be used together with [maui-actions/apple-provisionin
 | `app-store-connect-key-id` | yes | | App Store Connect API Key ID |
 | `app-store-connect-issuer-id` | yes | | App Store Connect API Issuer ID |
 | `app-store-connect-private-key` | yes | | API key (.p8) content, base64-encoded |
-| `distribution-private-key` | yes | | Persistent RSA private key, base64-encoded |
+| `distribution-private-key` | no | | Persistent RSA private key, base64-encoded. If omitted, a new key is generated each run and the certificate is recreated every time. |
 | `bundle-identifier` | yes | | App bundle ID (e.g. `com.example.app`) |
 | `cert-renewal-buffer-days` | no | `14` | Days before expiry to trigger renewal |
 
