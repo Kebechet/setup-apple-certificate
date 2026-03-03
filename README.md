@@ -86,4 +86,4 @@ The runner must have `python3`, `openssl`, and `curl` available. The action inst
 
 ## License
 
-MIT
+[MIT](LICENSE)
