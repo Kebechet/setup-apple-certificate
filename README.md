@@ -37,7 +37,7 @@ Store the base64 output as the `DISTRIBUTION_PRIVATE_KEY_BASE64` secret.
     bundle-identifier: com.example.app
 ```
 
-Then use the outputs in subsequent steps:
+This action is designed to be used together with [maui-actions/apple-provisioning](https://github.com/maui-actions/apple-provisioning), which installs the certificate and provisioning profile on the macOS runner for signing:
 
 ```yaml
 - uses: maui-actions/apple-provisioning@v4
