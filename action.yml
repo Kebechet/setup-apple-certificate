@@ -23,7 +23,7 @@ inputs:
   cert-renewal-buffer-days:
     description: Days before certificate expiry to trigger renewal
     required: false
-    default: "30"
+    default: "14"
 
 outputs:
   p12-certificate-base64:

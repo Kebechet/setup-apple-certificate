@@ -60,7 +60,7 @@ Then use the outputs in subsequent steps:
 | `app-store-connect-private-key` | yes | | API key (.p8) content, base64-encoded |
 | `distribution-private-key` | yes | | Persistent RSA private key, base64-encoded |
 | `bundle-identifier` | yes | | App bundle ID (e.g. `com.example.app`) |
-| `cert-renewal-buffer-days` | no | `30` | Days before expiry to trigger renewal |
+| `cert-renewal-buffer-days` | no | `14` | Days before expiry to trigger renewal |
 
 ## Outputs
 
