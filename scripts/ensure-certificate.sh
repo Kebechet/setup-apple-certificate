@@ -208,8 +208,8 @@ for cert_entry in certs:
         print(f"  Cert {cert_id}: key mismatch, skipping.", file=sys.stderr)
         continue
 
-    # Key matches - check expiration
-    not_valid_after = cert.not_valid_after_utc
+    # not_valid_after_utc added in cryptography 42.x; fall back for older versions
+    not_valid_after = getattr(cert, "not_valid_after_utc", cert.not_valid_after.replace(tzinfo=datetime.timezone.utc))
     remaining = not_valid_after - now
 
     if remaining > buffer:
