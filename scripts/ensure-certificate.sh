@@ -311,55 +311,86 @@ echo "Bundle ID resource: $BUNDLE_ID_RESOURCE_ID"
 echo "==> Checking existing provisioning profiles..."
 list_appstore_profiles > "$WORK_DIR/profiles_response.json"
 
-# Find an active profile linked to our certificate, or determine we need a new one
-PROFILE_ACTION=$(CERT_ID="$CERT_ID" python3 << 'PYEOF'
-import json, os, sys, base64
+# Categorize profiles, verify certificate bindings, and extract reusable profile content
+PROFILE_ACTION=$(CERT_ID="$CERT_ID" JWT_TOKEN="$JWT_TOKEN" API_BASE_URL="$API_BASE_URL" python3 << 'PYEOF'
+import json, os, sys, base64, subprocess
+
+PROFILE_PREFIX = "PIPE: "
 
 work_dir = os.environ["WORK_DIR"]
 our_cert_id = os.environ["CERT_ID"]
+jwt_token = os.environ["JWT_TOKEN"]
+api_base = os.environ["API_BASE_URL"]
 
 with open(os.path.join(work_dir, "profiles_response.json")) as f:
     data = json.load(f)
 
 profiles = data.get("data", [])
 stale_ids = []
+reuse_profile = None
 
 for profile in profiles:
     profile_id = profile["id"]
-    state = profile.get("attributes", {}).get("profileState", "")
-    name = profile.get("attributes", {}).get("name", "")
+    attrs = profile.get("attributes", {})
+    state = attrs.get("profileState", "")
+    name = attrs.get("name", "")
+
+    if not name.startswith(PROFILE_PREFIX):
+        print(f"  Profile {profile_id} ({name}): not managed by us, skipping.", file=sys.stderr)
+        continue
 
     if state != "ACTIVE":
         stale_ids.append(profile_id)
         print(f"  Profile {profile_id} ({name}): state={state}, marking for cleanup.", file=sys.stderr)
         continue
 
-    # Profile is active - we'll reuse it
-    # (maui-actions/apple-provisioning will handle cert-to-profile binding validation)
-    profile_content = profile.get("attributes", {}).get("profileContent", "")
-    if profile_content:
-        profile_bytes = base64.b64decode(profile_content)
-        with open(os.path.join(work_dir, "profile.mobileprovision"), "wb") as f:
-            f.write(profile_bytes)
+    print(f"  Profile {profile_id} ({name}): ACTIVE, checking certificate binding...", file=sys.stderr)
 
-    with open(os.path.join(work_dir, "reuse_profile_name.txt"), "w") as f:
-        f.write(name)
+    result = subprocess.run(
+        [
+            "curl", "-gsf",
+            "-H", f"Authorization: Bearer {jwt_token}",
+            "-H", "Content-Type: application/json",
+            f"{api_base}/profiles/{profile_id}/certificates",
+        ],
+        capture_output=True, text=True
+    )
 
-    print(f"  Profile {profile_id} ({name}): ACTIVE, reusing.", file=sys.stderr)
-    print("REUSE")
+    if result.returncode != 0:
+        print(f"  Profile {profile_id}: failed to fetch certificates (curl exit {result.returncode}), marking stale.", file=sys.stderr)
+        stale_ids.append(profile_id)
+        continue
 
-    # Still record stale ones for cleanup
-    with open(os.path.join(work_dir, "stale_profile_ids.txt"), "w") as f:
-        for sid in stale_ids:
-            f.write(sid + "\n")
-    sys.exit(0)
+    cert_data = json.loads(result.stdout)
+    bound_cert_ids = [c["id"] for c in cert_data.get("data", [])]
 
-# No active profile found
+    if our_cert_id in bound_cert_ids:
+        print(f"  Profile {profile_id} ({name}): bound to our certificate, reusing.", file=sys.stderr)
+        reuse_profile = profile
+        break
+    else:
+        print(f"  Profile {profile_id} ({name}): bound to certs {bound_cert_ids}, need {our_cert_id}. Marking stale.", file=sys.stderr)
+        stale_ids.append(profile_id)
+
 with open(os.path.join(work_dir, "stale_profile_ids.txt"), "w") as f:
     for sid in stale_ids:
         f.write(sid + "\n")
 
-print("CREATE")
+if reuse_profile:
+    name = reuse_profile["attributes"]["name"]
+    content = reuse_profile.get("attributes", {}).get("profileContent", "")
+    if content:
+        with open(os.path.join(work_dir, "profile.mobileprovision"), "wb") as f:
+            f.write(base64.b64decode(content))
+
+    with open(os.path.join(work_dir, "reuse_profile_name.txt"), "w") as f:
+        f.write(name)
+
+    print(f"Found reusable profile. {len(stale_ids)} stale profile(s) to clean up.", file=sys.stderr)
+    print("REUSE")
+else:
+    print(f"No reusable profile found. {len(stale_ids)} stale profile(s) to clean up.", file=sys.stderr)
+    print("CREATE")
 PYEOF
 )
 
@@ -378,7 +409,7 @@ if [ "$PROFILE_ACTION" = "REUSE" ]; then
 else
     echo "==> Creating new provisioning profile..."
 
-    PROFILE_NAME="${BUNDLE_IDENTIFIER}-profile-$(date +%s)"
+    PROFILE_NAME="PIPE: ${BUNDLE_IDENTIFIER} AppStore"
     PROFILE_PAYLOAD=$(PROFILE_NAME="$PROFILE_NAME" BUNDLE_RESOURCE_ID="$BUNDLE_ID_RESOURCE_ID" CERT_ID="$CERT_ID" python3 << 'PYEOF'
 import json, os
 print(json.dumps({
