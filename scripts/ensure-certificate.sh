@@ -182,7 +182,7 @@ list_distribution_certificates > "$WORK_DIR/certs_response.json"
 MATCH_RESULT=$(python3 << 'PYEOF'
 import json, base64, os, sys, datetime
 from cryptography.x509 import load_der_x509_certificate
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_der_private_key
 
 work_dir = os.environ["WORK_DIR"]
 cert_path = os.environ["CERT_PATH"]
@@ -190,7 +190,11 @@ key_path = os.environ["PRIVATE_KEY_PATH"]
 buffer_days = int(os.environ.get("CERT_RENEWAL_BUFFER_DAYS", "30"))
 
 with open(key_path, "rb") as f:
-    private_key = load_pem_private_key(f.read(), password=None)
+    key_data = f.read()
+try:
+    private_key = load_pem_private_key(key_data, password=None)
+except (ValueError, Exception):
+    private_key = load_der_private_key(key_data, password=None)
 
 key_pub_numbers = private_key.private_numbers().public_numbers
 
