@@ -34,7 +34,14 @@ export CERT_RENEWAL_BUFFER_DAYS
 
 generate_jwt() {
     local api_key_path="$WORK_DIR/api_key.p8"
-    echo "$APP_STORE_CONNECT_API_KEY_CONTENT_BASE64" | base64 -d > "$api_key_path"
+
+    local key_input="$APP_STORE_CONNECT_API_KEY_CONTENT_BASE64"
+    if echo "$key_input" | grep -q -- "-----BEGIN"; then
+        echo "::warning::app-store-connect-private-key contains PEM headers (-----BEGIN PRIVATE KEY-----). Stripping headers and newlines automatically. You can pass just the base64 key content without new lines to avoid this warning."
+        key_input=$(echo "$key_input" | sed '/^-----/d' | tr -d '\n')
+    fi
+
+    echo "$key_input" | base64 -d > "$api_key_path"
 
     API_KEY_PATH="$api_key_path" python3 << 'PYEOF'
 import jwt, time, os
@@ -463,6 +470,11 @@ PYEOF
         echo "ERROR: Profile creation failed with HTTP $HTTP_CODE"
         echo "Response body:"
         cat "$WORK_DIR/profile_create_response.json"
+        if [ "$HTTP_CODE" = "409" ]; then
+            echo ""
+            echo "This is likely a permissions issue. Ensure the App Store Connect API key has the 'Admin' or 'App Manager' role,"
+            echo "See: https://developer.apple.com/help/app-store-connect/reference/role-permissions/"
+        fi
         exit 1
     fi
 

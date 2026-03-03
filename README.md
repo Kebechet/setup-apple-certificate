@@ -15,6 +15,8 @@ Add the following secrets to your repository (Settings > Secrets and variables >
 | `APP_STORE_CONNECT_PRIVATE_KEY_BASE64` | The `.p8` API key file content, base64-encoded |
 | `DISTRIBUTION_PRIVATE_KEY_BASE64` | A persistent RSA private key used for certificate signing, base64-encoded |
 
+The App Store Connect API key must have the **Admin** role. See [Apple's role permissions reference](https://developer.apple.com/help/app-store-connect/reference/role-permissions/).
+
 To generate the distribution private key:
 
 ```bash
