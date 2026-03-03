@@ -39,6 +39,9 @@ outputs:
   provisioning-profile-name:
     description: Name of the provisioning profile
     value: ${{ steps.cert.outputs.PROVISIONING_PROFILE_NAME }}
+  codesign-identity:
+    description: "Certificate Common Name for CodesignKey (e.g. 'Apple Distribution: Name (TEAMID)')"
+    value: ${{ steps.cert.outputs.CODESIGN_IDENTITY }}
 
 runs:
   using: composite

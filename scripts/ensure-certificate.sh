@@ -505,6 +505,11 @@ echo "==> Converting DER certificate to PEM..."
 PEM_CERT_PATH="$WORK_DIR/certificate.pem"
 openssl x509 -inform DER -in "$CERT_PATH" -out "$PEM_CERT_PATH" 2>/dev/null
 
+CODESIGN_IDENTITY=$(openssl x509 -in "$PEM_CERT_PATH" -noout -subject -nameopt multiline \
+  | grep commonName \
+  | sed 's/.*= //')
+echo "==> Codesign identity: $CODESIGN_IDENTITY"
+
 P12_PASSWORD=$(openssl rand -base64 32)
 KEYCHAIN_PWD=$(openssl rand -base64 32)
 echo "::add-mask::$P12_PASSWORD"
@@ -529,6 +534,7 @@ echo "==> Writing outputs..."
     echo "P12_DISTRIBUTION_PASSWORD=$P12_PASSWORD"
     echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PWD"
     echo "PROVISIONING_PROFILE_NAME=$PROFILE_NAME"
+    echo "CODESIGN_IDENTITY=$CODESIGN_IDENTITY"
 } >> "$GITHUB_OUTPUT"
 
 echo "==> Done. Certificate and provisioning profile ready."
