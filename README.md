@@ -72,6 +72,7 @@ This action is designed to be used together with [maui-actions/apple-provisionin
 | `p12-password` | Random password for the P12 |
 | `keychain-password` | Random keychain password |
 | `provisioning-profile-name` | Name of the provisioning profile |
+| `codesign-identity` | Certificate Common Name (e.g. `Apple Distribution: Name (TEAMID)`) |
 
 ## How it works
 
