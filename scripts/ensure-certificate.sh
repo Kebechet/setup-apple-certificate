@@ -191,8 +191,9 @@ buffer_days = int(os.environ.get("CERT_RENEWAL_BUFFER_DAYS", "30"))
 
 with open(key_path, "rb") as f:
     key_data = f.read()
+pem_data = key_data.replace(b'\r\n', b'\n').replace(b'\r', b'\n').strip() + b'\n'
 try:
-    private_key = load_pem_private_key(key_data, password=None)
+    private_key = load_pem_private_key(pem_data, password=None)
 except (ValueError, Exception):
     private_key = load_der_private_key(key_data, password=None)
 
