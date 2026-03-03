@@ -147,11 +147,16 @@ echo "==> Generating JWT for App Store Connect API..."
 JWT_TOKEN=$(generate_jwt)
 echo "JWT generated successfully."
 
-# ── Decode persistent private key ────────────────────────────────────────────
+# ── Decode or generate private key ───────────────────────────────────────────
 
 PRIVATE_KEY_PATH="$WORK_DIR/private_key.pem"
-echo "$DISTRIBUTION_PRIVATE_KEY_BASE64" | base64 --decode > "$PRIVATE_KEY_PATH"
-echo "==> Persistent private key decoded."
+if [ -n "${DISTRIBUTION_PRIVATE_KEY_BASE64:-}" ]; then
+    echo "$DISTRIBUTION_PRIVATE_KEY_BASE64" | base64 --decode > "$PRIVATE_KEY_PATH"
+    echo "==> Persistent private key decoded."
+else
+    openssl genrsa -out "$PRIVATE_KEY_PATH" 2048 2>/dev/null
+    echo "==> No persistent private key provided. Generated a new RSA key (certificate will be regenerated each run)."
+fi
 
 # ── Find existing valid certificate matching our key ─────────────────────────
 

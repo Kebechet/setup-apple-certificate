@@ -16,8 +16,8 @@ inputs:
     description: App Store Connect API key (.p8) content, base64-encoded
     required: true
   distribution-private-key:
-    description: Persistent RSA private key, base64-encoded
-    required: true
+    description: Persistent RSA private key, base64-encoded. If omitted, a new key is generated each run and the certificate is recreated every time.
+    required: false
   bundle-identifier:
     description: App bundle identifier (e.g. com.satisfit.app)
     required: true
