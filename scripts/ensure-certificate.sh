@@ -501,7 +501,7 @@ openssl pkcs12 -export \
     -out "$P12_PATH" \
     -passout "pass:$P12_PASSWORD" 2>/dev/null
 
-P12_BASE64=$(base64 -w 0 "$P12_PATH" 2>/dev/null || base64 "$P12_PATH" | tr -d '\n')
+P12_BASE64=$(base64 -w 0 "$P12_PATH" 2>/dev/null || base64 -i "$P12_PATH" | tr -d '\n')
 
 # ── Write outputs ───────────────────────────────────────────────────────────
 
