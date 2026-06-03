@@ -330,7 +330,17 @@ if not bundle_ids:
     print(f"ERROR: No bundle ID found for {bundle_id}", file=sys.stderr)
     sys.exit(1)
 
-print(bundle_ids[0]["id"])
+# Apple's filter[identifier] is a substring match, not an exact one: querying
+# "app.horecon" also returns "app.horecon.web" (and any other identifier containing
+# the string). Blindly taking the first result can resolve to the wrong App ID, which
+# then fails profile creation with a misleading 409 "not allowed to create 'iOS' profile".
+exact_matches = [b for b in bundle_ids if b.get("attributes", {}).get("identifier") == bundle_id]
+if not exact_matches:
+    returned = ", ".join(b.get("attributes", {}).get("identifier", "?") for b in bundle_ids)
+    print(f"ERROR: No bundle ID exactly matching '{bundle_id}'. filter[identifier] returned: {returned}", file=sys.stderr)
+    sys.exit(1)
+
+print(exact_matches[0]["id"])
 PYEOF
 )
 echo "Bundle ID resource: $BUNDLE_ID_RESOURCE_ID"
@@ -472,8 +482,9 @@ PYEOF
         cat "$WORK_DIR/profile_create_response.json"
         if [ "$HTTP_CODE" = "409" ]; then
             echo ""
-            echo "This is likely a permissions issue. Ensure the App Store Connect API key has the 'Admin' or 'App Manager' role,"
-            echo "See: https://developer.apple.com/help/app-store-connect/reference/role-permissions/"
+            echo "Profile creation was rejected for App ID '$BUNDLE_IDENTIFIER' (resource $BUNDLE_ID_RESOURCE_ID). Common causes:"
+            echo "  - The resolved App ID is not an iOS App Store-eligible identifier (verify $BUNDLE_ID_RESOURCE_ID is the correct '$BUNDLE_IDENTIFIER' App ID)."
+            echo "  - The App Store Connect API key lacks the 'Admin' or 'App Manager' role: https://developer.apple.com/help/app-store-connect/reference/role-permissions/"
         fi
         exit 1
     fi
