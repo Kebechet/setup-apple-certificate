@@ -528,7 +528,16 @@ echo "::add-mask::$KEYCHAIN_PWD"
 P12_PATH="$WORK_DIR/certificate.p12"
 
 echo "==> Packaging P12..."
-openssl pkcs12 -export \
+# OpenSSL 3 defaults to AES-256-CBC/PBKDF2 for PKCS#12. Apple's Security.framework and
+# .NET/BouncyCastle-based tooling (e.g. AppleDev.Tools, used by the MAUI provisioning
+# actions) cannot parse that and fail with "ASN1 corrupted data". Emit the legacy
+# SHA1/3DES format via -legacy when the running OpenSSL supports it (OpenSSL 3+); LibreSSL
+# has no -legacy flag and already defaults to the compatible algorithms.
+P12_LEGACY_FLAG=""
+if openssl pkcs12 -help 2>&1 | grep -q -- "-legacy"; then
+    P12_LEGACY_FLAG="-legacy"
+fi
+openssl pkcs12 -export $P12_LEGACY_FLAG \
     -in "$PEM_CERT_PATH" \
     -inkey "$PRIVATE_KEY_PATH" \
     -out "$P12_PATH" \
