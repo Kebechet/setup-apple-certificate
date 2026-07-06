@@ -21,7 +21,7 @@ Key helper functions: `api_get()`, `api_post()`, `api_delete()` wrap curl calls 
 
 Certificate comparison is done by matching RSA public key modulus between the persistent private key and certificates returned from the API.
 
-Profile naming convention: `"PIPE: {BUNDLE_IDENTIFIER} AppStore"` — only profiles with this prefix are managed/cleaned.
+Profile naming convention: `"PIPE: {BUNDLE_IDENTIFIER} {suffix}"` — only profiles with the `PIPE: ` prefix are managed/cleaned. The suffix is per `profileType` (`AppStore` for IOS_APP_STORE — kept for backward compatibility — `tvOS AppStore`, `macOS AppStore`, …), so one profile is ensured per requested type via the `PROFILE_TYPES` env (default `IOS_APP_STORE`). Cleanup is scoped per type (the list call filters by `profileType`), so profiles of other types are never touched.
 
 ## Cross-Platform Considerations
 

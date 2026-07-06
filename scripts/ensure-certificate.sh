@@ -15,12 +15,16 @@ set -euo pipefail
 #
 # Optional environment variables:
 #   CERT_RENEWAL_BUFFER_DAYS                 - Days before expiry to trigger renewal (default: 30)
+#   PROFILE_TYPES                            - Comma/space-separated App Store Connect profileType
+#                                              values (default: IOS_APP_STORE). One profile is
+#                                              ensured per type, e.g. "IOS_APP_STORE,TVOS_APP_STORE".
 #
 # Outputs (via $GITHUB_OUTPUT):
 #   P12_DISTRIBUTION_CERTIFICATE_BASE64 - P12 certificate, base64-encoded
 #   P12_DISTRIBUTION_PASSWORD           - random password for the P12
 #   KEYCHAIN_PASSWORD                   - random keychain password
-#   PROVISIONING_PROFILE_NAME           - name of the provisioning profile
+#   PROVISIONING_PROFILE_NAME           - name of the provisioning profile (first requested type)
+#   PROVISIONING_PROFILE_NAMES_JSON     - JSON map of profileType -> provisioning profile name
 
 WORK_DIR=$(mktemp -d)
 export WORK_DIR
@@ -29,6 +33,11 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 API_BASE_URL="https://api.appstoreconnect.apple.com/v1"
 CERT_RENEWAL_BUFFER_DAYS="${CERT_RENEWAL_BUFFER_DAYS:-30}"
 export CERT_RENEWAL_BUFFER_DAYS
+
+# Profile types to ensure (App Store Connect `profileType` values). Accepts a comma-,
+# space-, or newline-separated list, e.g. "IOS_APP_STORE,TVOS_APP_STORE". One profile is
+# created/reused per type, all bound to the same shared distribution certificate.
+PROFILE_TYPES=$(echo "${PROFILE_TYPES:-IOS_APP_STORE}" | tr ',\n' '  ' | xargs)
 
 # ─── JWT Generation ──────────────────────────────────────────────────────────
 
@@ -143,8 +152,21 @@ PYEOF
 
 # ─── Provisioning Profile Management ──────────────────────────────────────────
 
-list_appstore_profiles() {
-    api_get "$API_BASE_URL/profiles?filter[profileType]=IOS_APP_STORE&limit=200"
+list_profiles() {
+    local profile_type="$1"
+    api_get "$API_BASE_URL/profiles?filter[profileType]=$profile_type&limit=200"
+}
+
+# Human-readable profile name suffix per profile type. IOS_APP_STORE keeps the legacy
+# "AppStore" suffix so profiles created by earlier versions of this action are reused
+# (not orphaned); other types get a distinct suffix so they coexist.
+profile_suffix() {
+    case "$1" in
+        IOS_APP_STORE)  echo "AppStore" ;;
+        TVOS_APP_STORE) echo "tvOS AppStore" ;;
+        MAC_APP_STORE)  echo "macOS AppStore" ;;
+        *)              echo "$1" ;;
+    esac
 }
 
 delete_profile() {
@@ -345,8 +367,15 @@ PYEOF
 )
 echo "Bundle ID resource: $BUNDLE_ID_RESOURCE_ID"
 
-echo "==> Checking existing provisioning profiles..."
-list_appstore_profiles > "$WORK_DIR/profiles_response.json"
+# One provisioning profile per requested type, all bound to the shared certificate.
+PROFILE_NAMES_JSON=""
+PRIMARY_PROFILE_NAME=""
+
+for PROFILE_TYPE in $PROFILE_TYPES; do
+export PROFILE_TYPE
+
+echo "==> [$PROFILE_TYPE] Checking existing provisioning profiles..."
+list_profiles "$PROFILE_TYPE" > "$WORK_DIR/profiles_response.json"
 
 # Categorize profiles, verify certificate bindings, and extract reusable profile content
 PROFILE_ACTION=$(CERT_ID="$CERT_ID" JWT_TOKEN="$JWT_TOKEN" API_BASE_URL="$API_BASE_URL" python3 << 'PYEOF'
@@ -446,15 +475,15 @@ if [ "$PROFILE_ACTION" = "REUSE" ]; then
 else
     echo "==> Creating new provisioning profile..."
 
-    PROFILE_NAME="PIPE: ${BUNDLE_IDENTIFIER} AppStore"
-    PROFILE_PAYLOAD=$(PROFILE_NAME="$PROFILE_NAME" BUNDLE_RESOURCE_ID="$BUNDLE_ID_RESOURCE_ID" CERT_ID="$CERT_ID" python3 << 'PYEOF'
+    PROFILE_NAME="PIPE: ${BUNDLE_IDENTIFIER} $(profile_suffix "$PROFILE_TYPE")"
+    PROFILE_PAYLOAD=$(PROFILE_NAME="$PROFILE_NAME" BUNDLE_RESOURCE_ID="$BUNDLE_ID_RESOURCE_ID" CERT_ID="$CERT_ID" PROFILE_TYPE="$PROFILE_TYPE" python3 << 'PYEOF'
 import json, os
 print(json.dumps({
     "data": {
         "type": "profiles",
         "attributes": {
             "name": os.environ["PROFILE_NAME"],
-            "profileType": "IOS_APP_STORE"
+            "profileType": os.environ["PROFILE_TYPE"]
         },
         "relationships": {
             "bundleId": {
@@ -510,6 +539,13 @@ PYEOF
     echo "==> Provisioning profile ready: $PROFILE_NAME"
 fi
 
+[ -n "$PROFILE_NAMES_JSON" ] && PROFILE_NAMES_JSON+=","
+PROFILE_NAMES_JSON+="\"$PROFILE_TYPE\":\"$PROFILE_NAME\""
+[ -z "$PRIMARY_PROFILE_NAME" ] && PRIMARY_PROFILE_NAME="$PROFILE_NAME"
+done
+PROFILE_NAMES_JSON="{$PROFILE_NAMES_JSON}"
+echo "==> All provisioning profiles ready: $PROFILE_NAMES_JSON"
+
 # ── Package into P12 ────────────────────────────────────────────────────────
 
 echo "==> Converting DER certificate to PEM..."
@@ -553,7 +589,8 @@ echo "==> Writing outputs..."
     echo "P12_DISTRIBUTION_CERTIFICATE_BASE64=$P12_BASE64"
     echo "P12_DISTRIBUTION_PASSWORD=$P12_PASSWORD"
     echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PWD"
-    echo "PROVISIONING_PROFILE_NAME=$PROFILE_NAME"
+    echo "PROVISIONING_PROFILE_NAME=$PRIMARY_PROFILE_NAME"
+    echo "PROVISIONING_PROFILE_NAMES_JSON=$PROFILE_NAMES_JSON"
     echo "CODESIGN_IDENTITY=$CODESIGN_IDENTITY"
 } >> "$GITHUB_OUTPUT"
 
