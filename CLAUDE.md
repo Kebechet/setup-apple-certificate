@@ -21,7 +21,9 @@ Key helper functions: `api_get()`, `api_post()`, `api_delete()` wrap curl calls 
 
 Certificate comparison is done by matching RSA public key modulus between the persistent private key and certificates returned from the API.
 
-Profile naming convention: `"PIPE: {BUNDLE_IDENTIFIER} AppStore"` — only profiles with this prefix are managed/cleaned.
+Profile naming convention: `"PIPE: {BUNDLE_IDENTIFIER} {suffix}"` — only profiles with the `PIPE: ` prefix are managed/cleaned. The suffix is per `profileType` (`AppStore` for IOS_APP_STORE — kept for backward compatibility — `tvOS AppStore`, `macOS AppStore`, …), so one profile is ensured per requested type via the `PROFILE_TYPES` env (default `IOS_APP_STORE`). `PROFILE_TYPES` values are validated against the known enum, de-duplicated, and an empty list is an error. Cleanup is scoped per type (the list call filters by `profileType`), so profiles of other types are never touched.
+
+App ID resolution is per profile type and platform-aware: the same identifier string can exist as separate App ID resources per platform, so `profile_platform()` maps each `profileType` to the required `bundleIds` platform (`MAC_*` → `MAC_OS`, everything else including tvOS and Mac Catalyst → `IOS`; `UNIVERSAL` satisfies either) and the resolver prefers an exact platform match over `UNIVERSAL`.
 
 ## Cross-Platform Considerations
 

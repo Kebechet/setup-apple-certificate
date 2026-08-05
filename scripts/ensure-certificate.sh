@@ -15,12 +15,16 @@ set -euo pipefail
 #
 # Optional environment variables:
 #   CERT_RENEWAL_BUFFER_DAYS                 - Days before expiry to trigger renewal (default: 30)
+#   PROFILE_TYPES                            - Comma/space-separated App Store Connect profileType
+#                                              values (default: IOS_APP_STORE). One profile is
+#                                              ensured per type, e.g. "IOS_APP_STORE,TVOS_APP_STORE".
 #
 # Outputs (via $GITHUB_OUTPUT):
 #   P12_DISTRIBUTION_CERTIFICATE_BASE64 - P12 certificate, base64-encoded
 #   P12_DISTRIBUTION_PASSWORD           - random password for the P12
 #   KEYCHAIN_PASSWORD                   - random keychain password
-#   PROVISIONING_PROFILE_NAME           - name of the provisioning profile
+#   PROVISIONING_PROFILE_NAME           - name of the provisioning profile (first requested type)
+#   PROVISIONING_PROFILE_NAMES_JSON     - JSON map of profileType -> provisioning profile name
 
 WORK_DIR=$(mktemp -d)
 export WORK_DIR
@@ -29,6 +33,35 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 API_BASE_URL="https://api.appstoreconnect.apple.com/v1"
 CERT_RENEWAL_BUFFER_DAYS="${CERT_RENEWAL_BUFFER_DAYS:-30}"
 export CERT_RENEWAL_BUFFER_DAYS
+
+# Profile types to ensure (App Store Connect `profileType` values). Accepts a comma-,
+# space-, or newline-separated list, e.g. "IOS_APP_STORE,TVOS_APP_STORE". One profile is
+# created/reused per type, all bound to the same shared distribution certificate.
+# Each value is validated against the known enum so a typo fails here with a clear
+# message instead of an opaque API 400 (this also guarantees the values are safe to
+# interpolate into URLs and JSON below), duplicates are dropped, and an effectively
+# empty list (e.g. ",") is an error rather than a silent no-op success.
+KNOWN_PROFILE_TYPES="IOS_APP_DEVELOPMENT IOS_APP_STORE IOS_APP_ADHOC IOS_APP_INHOUSE MAC_APP_DEVELOPMENT MAC_APP_STORE MAC_APP_DIRECT TVOS_APP_DEVELOPMENT TVOS_APP_STORE TVOS_APP_ADHOC TVOS_APP_INHOUSE MAC_CATALYST_APP_DEVELOPMENT MAC_CATALYST_APP_STORE MAC_CATALYST_APP_DIRECT"
+
+RAW_PROFILE_TYPES=$(printf '%s' "${PROFILE_TYPES:-IOS_APP_STORE}" | tr ',\n' '  ' | xargs)
+PROFILE_TYPES=""
+for REQUESTED_TYPE in $RAW_PROFILE_TYPES; do
+    case " $KNOWN_PROFILE_TYPES " in
+        *" $REQUESTED_TYPE "*) ;;
+        *)
+            echo "ERROR: Unknown profile type '$REQUESTED_TYPE'. Valid values: $KNOWN_PROFILE_TYPES" >&2
+            exit 1
+            ;;
+    esac
+    case " $PROFILE_TYPES " in
+        *" $REQUESTED_TYPE "*) echo "::warning::Duplicate profile type '$REQUESTED_TYPE' ignored." ;;
+        *) PROFILE_TYPES="${PROFILE_TYPES:+$PROFILE_TYPES }$REQUESTED_TYPE" ;;
+    esac
+done
+if [ -z "$PROFILE_TYPES" ]; then
+    echo "ERROR: profile-types is effectively empty after normalization. Provide at least one App Store Connect profileType, e.g. IOS_APP_STORE." >&2
+    exit 1
+fi
 
 # ─── JWT Generation ──────────────────────────────────────────────────────────
 
@@ -143,8 +176,32 @@ PYEOF
 
 # ─── Provisioning Profile Management ──────────────────────────────────────────
 
-list_appstore_profiles() {
-    api_get "$API_BASE_URL/profiles?filter[profileType]=IOS_APP_STORE&limit=200"
+list_profiles() {
+    local profile_type="$1"
+    api_get "$API_BASE_URL/profiles?filter[profileType]=$profile_type&limit=200"
+}
+
+# Human-readable profile name suffix per profile type. IOS_APP_STORE keeps the legacy
+# "AppStore" suffix so profiles created by earlier versions of this action are reused
+# (not orphaned); other types get a distinct suffix so they coexist.
+profile_suffix() {
+    case "$1" in
+        IOS_APP_STORE)  echo "AppStore" ;;
+        TVOS_APP_STORE) echo "tvOS AppStore" ;;
+        MAC_APP_STORE)  echo "macOS AppStore" ;;
+        *)              echo "$1" ;;
+    esac
+}
+
+# App Store Connect `bundleIds` platform each profile type attaches to. iOS, tvOS and
+# Mac Catalyst profiles use IOS-platform App IDs (iOS and tvOS share one App ID
+# resource, and Catalyst apps derive from the iOS app); MAC_* profiles need a MAC_OS
+# App ID. A UNIVERSAL App ID satisfies either.
+profile_platform() {
+    case "$1" in
+        MAC_APP_STORE|MAC_APP_DEVELOPMENT|MAC_APP_DIRECT) echo "MAC_OS" ;;
+        *) echo "IOS" ;;
+    esac
 }
 
 delete_profile() {
@@ -316,11 +373,25 @@ export BUNDLE_IDENTIFIER
 echo "==> Looking up bundle ID for $BUNDLE_IDENTIFIER..."
 lookup_bundle_id "$BUNDLE_IDENTIFIER" > "$WORK_DIR/bundle_id_response.json"
 
+# One provisioning profile per requested type, all bound to the shared certificate.
+PROFILE_NAMES_JSON=""
+PRIMARY_PROFILE_NAME=""
+
+for PROFILE_TYPE in $PROFILE_TYPES; do
+export PROFILE_TYPE
+
+# Resolve the App ID resource for this profile type from the single lookup above.
+# Resolution is per-type because the same identifier string can exist as several App
+# ID resources on different platforms (e.g. one IOS, one MAC_OS).
+BUNDLE_PLATFORM=$(profile_platform "$PROFILE_TYPE")
+export BUNDLE_PLATFORM
 BUNDLE_ID_RESOURCE_ID=$(python3 << 'PYEOF' || { echo "ERROR: Failed to look up bundle ID"; exit 1; }
 import json, sys, os
 
 work_dir = os.environ["WORK_DIR"]
 bundle_id = os.environ["BUNDLE_IDENTIFIER"]
+profile_type = os.environ["PROFILE_TYPE"]
+platform = os.environ["BUNDLE_PLATFORM"]
 
 with open(os.path.join(work_dir, "bundle_id_response.json")) as f:
     data = json.load(f)
@@ -340,13 +411,23 @@ if not exact_matches:
     print(f"ERROR: No bundle ID exactly matching '{bundle_id}'. filter[identifier] returned: {returned}", file=sys.stderr)
     sys.exit(1)
 
-print(exact_matches[0]["id"])
+# Pick the resource whose platform matches the requested profile type, preferring an
+# exact platform match over a UNIVERSAL App ID.
+platform_matches = [b for b in exact_matches
+                    if b.get("attributes", {}).get("platform") in (platform, "UNIVERSAL")]
+platform_matches.sort(key=lambda b: b.get("attributes", {}).get("platform") != platform)
+if not platform_matches:
+    found = ", ".join(b.get("attributes", {}).get("platform", "?") for b in exact_matches)
+    print(f"ERROR: {profile_type} needs a '{bundle_id}' App ID with platform {platform} (or UNIVERSAL), but only found platform(s): {found}", file=sys.stderr)
+    sys.exit(1)
+
+print(platform_matches[0]["id"])
 PYEOF
 )
-echo "Bundle ID resource: $BUNDLE_ID_RESOURCE_ID"
+echo "[$PROFILE_TYPE] Bundle ID resource: $BUNDLE_ID_RESOURCE_ID (platform: $BUNDLE_PLATFORM)"
 
-echo "==> Checking existing provisioning profiles..."
-list_appstore_profiles > "$WORK_DIR/profiles_response.json"
+echo "==> [$PROFILE_TYPE] Checking existing provisioning profiles..."
+list_profiles "$PROFILE_TYPE" > "$WORK_DIR/profiles_response.json"
 
 # Categorize profiles, verify certificate bindings, and extract reusable profile content
 PROFILE_ACTION=$(CERT_ID="$CERT_ID" JWT_TOKEN="$JWT_TOKEN" API_BASE_URL="$API_BASE_URL" python3 << 'PYEOF'
@@ -446,15 +527,15 @@ if [ "$PROFILE_ACTION" = "REUSE" ]; then
 else
     echo "==> Creating new provisioning profile..."
 
-    PROFILE_NAME="PIPE: ${BUNDLE_IDENTIFIER} AppStore"
-    PROFILE_PAYLOAD=$(PROFILE_NAME="$PROFILE_NAME" BUNDLE_RESOURCE_ID="$BUNDLE_ID_RESOURCE_ID" CERT_ID="$CERT_ID" python3 << 'PYEOF'
+    PROFILE_NAME="PIPE: ${BUNDLE_IDENTIFIER} $(profile_suffix "$PROFILE_TYPE")"
+    PROFILE_PAYLOAD=$(PROFILE_NAME="$PROFILE_NAME" BUNDLE_RESOURCE_ID="$BUNDLE_ID_RESOURCE_ID" CERT_ID="$CERT_ID" PROFILE_TYPE="$PROFILE_TYPE" python3 << 'PYEOF'
 import json, os
 print(json.dumps({
     "data": {
         "type": "profiles",
         "attributes": {
             "name": os.environ["PROFILE_NAME"],
-            "profileType": "IOS_APP_STORE"
+            "profileType": os.environ["PROFILE_TYPE"]
         },
         "relationships": {
             "bundleId": {
@@ -483,7 +564,7 @@ PYEOF
         if [ "$HTTP_CODE" = "409" ]; then
             echo ""
             echo "Profile creation was rejected for App ID '$BUNDLE_IDENTIFIER' (resource $BUNDLE_ID_RESOURCE_ID). Common causes:"
-            echo "  - The resolved App ID is not an iOS App Store-eligible identifier (verify $BUNDLE_ID_RESOURCE_ID is the correct '$BUNDLE_IDENTIFIER' App ID)."
+            echo "  - The resolved App ID is not eligible for $PROFILE_TYPE profiles (verify $BUNDLE_ID_RESOURCE_ID is the correct '$BUNDLE_IDENTIFIER' App ID)."
             echo "  - The App Store Connect API key lacks the 'Admin' or 'App Manager' role: https://developer.apple.com/help/app-store-connect/reference/role-permissions/"
         fi
         exit 1
@@ -509,6 +590,13 @@ PYEOF
 
     echo "==> Provisioning profile ready: $PROFILE_NAME"
 fi
+
+[ -n "$PROFILE_NAMES_JSON" ] && PROFILE_NAMES_JSON+=","
+PROFILE_NAMES_JSON+="\"$PROFILE_TYPE\":\"$PROFILE_NAME\""
+[ -z "$PRIMARY_PROFILE_NAME" ] && PRIMARY_PROFILE_NAME="$PROFILE_NAME"
+done
+PROFILE_NAMES_JSON="{$PROFILE_NAMES_JSON}"
+echo "==> All provisioning profiles ready: $PROFILE_NAMES_JSON"
 
 # ── Package into P12 ────────────────────────────────────────────────────────
 
@@ -553,7 +641,8 @@ echo "==> Writing outputs..."
     echo "P12_DISTRIBUTION_CERTIFICATE_BASE64=$P12_BASE64"
     echo "P12_DISTRIBUTION_PASSWORD=$P12_PASSWORD"
     echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PWD"
-    echo "PROVISIONING_PROFILE_NAME=$PROFILE_NAME"
+    echo "PROVISIONING_PROFILE_NAME=$PRIMARY_PROFILE_NAME"
+    echo "PROVISIONING_PROFILE_NAMES_JSON=$PROFILE_NAMES_JSON"
     echo "CODESIGN_IDENTITY=$CODESIGN_IDENTITY"
 } >> "$GITHUB_OUTPUT"
 

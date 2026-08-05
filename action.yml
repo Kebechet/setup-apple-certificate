@@ -25,6 +25,13 @@ inputs:
     description: Days before certificate expiry to trigger renewal
     required: false
     default: "14"
+  profile-types:
+    description: >-
+      Comma- or space-separated App Store Connect profileType values to ensure
+      (e.g. "IOS_APP_STORE,TVOS_APP_STORE"). One provisioning profile is created
+      or reused per type, all bound to the shared distribution certificate.
+    required: false
+    default: IOS_APP_STORE
 
 outputs:
   p12-certificate-base64:
@@ -37,8 +44,11 @@ outputs:
     description: Random keychain password
     value: ${{ steps.cert.outputs.KEYCHAIN_PASSWORD }}
   provisioning-profile-name:
-    description: Name of the provisioning profile
+    description: Name of the provisioning profile (the first requested profile-type; kept for backward compatibility)
     value: ${{ steps.cert.outputs.PROVISIONING_PROFILE_NAME }}
+  provisioning-profile-names:
+    description: 'JSON object mapping each requested profileType to its provisioning profile name (e.g. {"IOS_APP_STORE":"PIPE: com.example.app AppStore","TVOS_APP_STORE":"PIPE: com.example.app tvOS AppStore"})'
+    value: ${{ steps.cert.outputs.PROVISIONING_PROFILE_NAMES_JSON }}
   codesign-identity:
     description: "Certificate Common Name for CodesignKey (e.g. 'Apple Distribution: Name (TEAMID)')"
     value: ${{ steps.cert.outputs.CODESIGN_IDENTITY }}
@@ -56,6 +66,7 @@ runs:
         DISTRIBUTION_PRIVATE_KEY_BASE64: ${{ inputs.distribution-private-key }}
         BUNDLE_IDENTIFIER: ${{ inputs.bundle-identifier }}
         CERT_RENEWAL_BUFFER_DAYS: ${{ inputs.cert-renewal-buffer-days }}
+        PROFILE_TYPES: ${{ inputs.profile-types }}
       run: |
         chmod +x "${{ github.action_path }}/scripts/ensure-certificate.sh"
         "${{ github.action_path }}/scripts/ensure-certificate.sh"

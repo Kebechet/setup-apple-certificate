@@ -63,6 +63,7 @@ This action is designed to be used together with [maui-actions/apple-provisionin
 | `distribution-private-key` | yes | | Persistent RSA private key, base64-encoded |
 | `bundle-identifier` | yes | | App bundle ID (e.g. `com.example.app`) |
 | `cert-renewal-buffer-days` | no | `14` | Days before expiry to trigger renewal |
+| `profile-types` | no | `IOS_APP_STORE` | Comma/space-separated App Store Connect `profileType` values. One profile is created/reused per type, all bound to the shared certificate — e.g. `IOS_APP_STORE,TVOS_APP_STORE` for a universal iOS + tvOS app. Values are validated against the known `profileType` enum and de-duplicated; an empty list fails the action. |
 
 ## Outputs
 
@@ -71,7 +72,8 @@ This action is designed to be used together with [maui-actions/apple-provisionin
 | `p12-certificate-base64` | P12 certificate, base64-encoded |
 | `p12-password` | Random password for the P12 |
 | `keychain-password` | Random keychain password |
-| `provisioning-profile-name` | Name of the provisioning profile |
+| `provisioning-profile-name` | Name of the provisioning profile (the first requested `profile-types` value; kept for backward compatibility) |
+| `provisioning-profile-names` | JSON object mapping each requested `profileType` to its provisioning profile name, e.g. `{"IOS_APP_STORE":"PIPE: com.example.app AppStore","TVOS_APP_STORE":"PIPE: com.example.app tvOS AppStore"}` |
 | `codesign-identity` | Certificate Common Name (e.g. `Apple Distribution: Name (TEAMID)`) |
 
 ## How it works
@@ -80,7 +82,7 @@ This action is designed to be used together with [maui-actions/apple-provisionin
 2. Lists existing distribution certificates and checks if any match the provided private key
 3. If a valid matching certificate exists (not expiring within the buffer period), reuses it
 4. If no valid match exists, creates a new CSR and submits it to get a new certificate
-5. Looks up or creates an App Store provisioning profile linked to the certificate
+5. Looks up or creates an App Store provisioning profile for each requested `profile-types` value, each linked to the certificate. The App ID is resolved per type by platform (`MAC_*` types need a `MAC_OS` or `UNIVERSAL` App ID; iOS/tvOS/Catalyst types use the `IOS` App ID), so identifiers that exist as both an iOS and a macOS App ID resolve correctly
 6. Packages everything into a P12 and writes outputs for downstream steps
 
 ## Requirements
