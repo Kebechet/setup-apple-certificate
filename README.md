@@ -63,7 +63,7 @@ This action is designed to be used together with [maui-actions/apple-provisionin
 | `distribution-private-key` | yes | | Persistent RSA private key, base64-encoded |
 | `bundle-identifier` | yes | | App bundle ID (e.g. `com.example.app`) |
 | `cert-renewal-buffer-days` | no | `14` | Days before expiry to trigger renewal |
-| `profile-types` | no | `IOS_APP_STORE` | Comma/space-separated App Store Connect `profileType` values. One profile is created/reused per type, all bound to the shared certificate — e.g. `IOS_APP_STORE,TVOS_APP_STORE` for a universal iOS + tvOS app. Values are validated against the known `profileType` enum and de-duplicated; an empty list fails the action. |
+| `profile-types` | no | `IOS_APP_STORE` | Comma/space-separated App Store Connect `profileType` values. One profile is created/reused per type, all bound to the shared certificate — e.g. `IOS_APP_STORE,TVOS_APP_STORE` for a universal iOS + tvOS app. Values are validated against the known `profileType` enum and de-duplicated; a whitespace- or comma-only value fails the action, while an empty value falls back to the default. |
 
 ## Outputs
 
